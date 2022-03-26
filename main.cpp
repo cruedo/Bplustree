@@ -3,12 +3,14 @@
 #include <vector>
 #include <algorithm>
 #include <queue>
+#include <cmath>
 
 using namespace std;
 
-const int32_t ORDER = 3;
+const int32_t ORDER = 7;
 const int32_t INTERNAL_NODE_LEN = 2 * ORDER - 1;
-const int32_t DATA_LEN = 2;
+const int32_t DATA_LEN = ORDER - 1;
+const int32_t MIN_DATA_LEN = DATA_LEN/2;
 
 
 
@@ -28,7 +30,23 @@ struct Node {
     InternalNode* internal_node;
 };
 
+// Search
 
+Node* findBlock(Node* head, int64_t value) {
+    if(head->is_leaf) 
+        return head;
+
+    auto& kv = head->internal_node->kv;
+    int sz = kv.size();
+    int i;
+    for(i=1;i<sz;i+=2) {
+        if(kv[i] >= value) break;
+    }
+    return findBlock((Node*)kv[i-1], value);
+}
+
+
+// Debug
 
 void printInternalNode(Node* &root) {
     auto &kv = root->internal_node->kv;
@@ -49,7 +67,7 @@ void printLeafNode(Node* &root) {
 }
 
 
-
+// Insertion
 
 void moveRight(vector<int64_t> &kv) {
     int sz = kv.size();
@@ -128,7 +146,6 @@ void insertIntoInternal(Node* head, int64_t key, Node* leftptr, Node* rightptr, 
 }
 
 
-
 Node* splitLeafNode(Node* head, int64_t value) {
 
     auto &data = head->leaf_node->data;
@@ -164,32 +181,14 @@ void insertIntoLeaf(Node* head, int value, Node* &root) {
 }
 
 
-
-void insert(Node* head, Node* parent, int64_t value, Node* &root) {
-    if(!head->is_leaf) {
-        auto& kv = head->internal_node->kv;
-        int sz = kv.size();
-        int i;
-        for(i=1;i<sz;i+=2) {
-            if(kv[i] >= value) break;
-        }
-        insert((Node*)kv[i-1], head, value, root);
-        return;
-    }
-
-    if(head == nullptr) {
-        Node* ptr = new Node();
-        ptr->is_leaf = 1;
-        ptr->parent = parent;
-        ptr->leaf_node = new LeafNode();
-        head = ptr;
-    }
+void insert(Node* head, int64_t value, Node* &root) {
+    head = findBlock(head, value);
 
     insertIntoLeaf(head, value, root);
 }
 
 
-
+// Print Tree
 
 void printInternal(Node* head, queue<pair<int, Node*>>& Q, int dis) {
     auto& kv = head->internal_node->kv;
@@ -236,6 +235,158 @@ void print(Node* head) {
 }
 
 
+// Deletion
+
+int calcKeys(int sz) {
+    sz /= 2;
+    return sz;
+}
+
+void mergeInternalNodes(Node* left, Node* right, int64_t mid) {
+    left->internal_node->kv.push_back(mid);
+    int cnt = 0;
+    for(auto i: right->internal_node->kv) {
+        if(cnt % 2 == 0) {
+            ((Node*)i)->parent = left;
+        }
+        left->internal_node->kv.push_back(i);
+        ++cnt;
+    }
+    delete right;
+}
+
+void deleteInternal(Node* head, int64_t key, int index, Node* &root) {
+    auto& kv = head->internal_node->kv;
+    int sz = kv.size();
+
+    for(int i=index;i<sz-2;++i) {
+        kv[i] = kv[i+2];
+    }
+    kv.resize(sz - 2);
+
+    
+    if(kv.size() == 1 && head->parent == nullptr) {
+        int64_t child = kv[0];
+        delete root->internal_node;
+        delete root;
+        root = (Node*)child;
+        root->parent = 0;
+        return;
+    }
+    if(head->parent == nullptr || calcKeys(sz-2) >= MIN_DATA_LEN) {
+        return;
+    }
+
+
+    Node *leftSibling = nullptr, *rightSibling = nullptr, *parent = head->parent;
+
+
+    auto& parkv = parent->internal_node->kv;
+    int parsz = parkv.size();
+
+    int i;
+    for(i=1;i<parsz;i+=2) {
+        if(parkv[i] >= key) break;
+    }
+    i -= 1;
+
+    if(i-2 >= 0) leftSibling = (Node*)parkv[i-2];
+    if(i+2 < parsz) rightSibling = (Node*)parkv[i+2];
+
+
+
+    if(leftSibling != nullptr && calcKeys(leftSibling->internal_node->kv.size()) > MIN_DATA_LEN) {
+        auto& leftkv = leftSibling->internal_node->kv;
+        kv.insert(kv.begin(), parent->internal_node->kv[i-1]);
+        kv.insert(kv.begin(), leftkv.back());
+        ((Node*)leftkv.back())->parent = head;
+        leftkv.pop_back();
+        parent->internal_node->kv[i-1] = leftkv.back();
+        leftkv.pop_back(); 
+    }
+    else if(rightSibling != nullptr && calcKeys(rightSibling->internal_node->kv.size()) >  MIN_DATA_LEN) {
+        kv.push_back(parent->internal_node->kv[i+1]);
+        kv.push_back(rightSibling->internal_node->kv.front());
+        ((Node*)rightSibling->internal_node->kv.front())->parent = head;
+        rightSibling->internal_node->kv.erase(rightSibling->internal_node->kv.begin());
+        parent->internal_node->kv[i+1] = rightSibling->internal_node->kv.front();
+        rightSibling->internal_node->kv.erase(rightSibling->internal_node->kv.begin());
+    }
+    else if(leftSibling != nullptr) {
+        mergeInternalNodes(leftSibling, head, parkv[i-1]);
+        deleteInternal(parent, parkv[i-1], i-1, root);
+    }
+    else if(rightSibling != nullptr) {
+        mergeInternalNodes(head, rightSibling, parkv[i+1]);
+        deleteInternal(parent, parkv[i+1], i+1, root);
+    }
+}
+
+void mergeLeafNodes(Node* left, Node* right) {
+    for(auto i: right->leaf_node->data) {
+        left->leaf_node->data.push_back(i);
+    }
+    delete right;
+}
+
+void deleteLeaf(Node* head, int value, Node* &root) {
+    auto& data = head->leaf_node->data;
+    auto it = find(data.begin(), data.end(), value);
+    if(it == data.end()) {
+        cout << "Error: key does not exist\n";
+        return;
+    }
+    data.erase(it);
+    int sz = data.size();
+
+
+    // The min and max data constraints do not apply to the root node
+    if(head->parent == nullptr || sz >= MIN_DATA_LEN) {
+        return;
+    }
+
+    Node *leftSibling = nullptr, *rightSibling = nullptr, *parent = head->parent;
+
+    auto& parkv = parent->internal_node->kv;
+    int parsz = parkv.size();
+
+    int i;
+    for(i=1;i<parsz;i+=2) {
+        if(parkv[i] >= value) break;
+    }
+
+    i -= 1;
+    if(i-2 >= 0) leftSibling = (Node*)parkv[i-2];
+    if(i+2 < parsz) rightSibling = (Node*)parkv[i+2];
+
+
+    if(leftSibling != nullptr && leftSibling->leaf_node->data.size() > MIN_DATA_LEN) {
+        data.insert(data.begin(), leftSibling->leaf_node->data.back());
+        leftSibling->leaf_node->data.pop_back();
+        parkv[i-1] = leftSibling->leaf_node->data.back();
+    }
+    else if(rightSibling != nullptr && rightSibling->leaf_node->data.size() > MIN_DATA_LEN) {
+        parkv[i+1] = rightSibling->leaf_node->data.front();
+        data.push_back(parkv[i+1]);
+        rightSibling->leaf_node->data.erase(rightSibling->leaf_node->data.begin());
+    }
+    else if(leftSibling != nullptr) {
+        mergeLeafNodes(leftSibling, head);
+        deleteInternal(parent, parkv[i-1], i-1, root);
+    }
+    else if(rightSibling != nullptr) {
+        mergeLeafNodes(head, rightSibling);
+        deleteInternal(parent, parkv[i+1], i+1, root);
+    }
+}
+
+void deleteRecord(Node* head, int value, Node* &root) {
+    head = findBlock(head, value);
+    deleteLeaf(head, value, root);
+}
+
+
+
 
 int main(int argc, char* argv[]) {
     Node* root = new Node();
@@ -247,11 +398,24 @@ int main(int argc, char* argv[]) {
     // vector<int> nums = {5, 12, 1, 2, 18 ,21};
     vector<int> nums = {5, 21, 16, 1, 6 ,2, 7, 9, 12, 18, 0};
 
-    for(auto i: nums) {
-        insert(root, nullptr, i, root);
-        print(root);
+    vector<int> v;
+    for(int i=10; i<=530; i+=10) {
+        v.push_back(i);
+        insert(root, i, root);
     }
+    print(root);
 
+    cout << "--------------------------\n";
+
+    while(v.size()) {
+        int m = v.size();
+        int ind = rand() % m;
+        cout << "DELETE: " << v[ind] << "\n";
+
+        deleteRecord(root, v[ind], root);
+        print(root);
+        v.erase(v.begin()+ind);
+    }
 
     cout << "\n";
 
