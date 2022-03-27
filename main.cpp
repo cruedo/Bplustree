@@ -7,7 +7,7 @@
 
 using namespace std;
 
-const int32_t ORDER = 3;
+const int32_t ORDER = 7;
 const int32_t INTERNAL_NODE_LEN = 2 * ORDER - 1;
 const int32_t DATA_LEN = ORDER - 1;
 const int32_t MIN_DATA_LEN = DATA_LEN/2;
@@ -20,6 +20,7 @@ struct InternalNode {
 
 struct LeafNode {
     vector<int64_t> data;
+    struct Node* next;
 };
 
 struct Node {
@@ -108,9 +109,6 @@ void insertIntoInternal(Node* head, int64_t key, Node* leftptr, Node* rightptr, 
         head->is_leaf = 0;
         head->internal_node->kv.push_back((int64_t)leftptr);
         root = head;
-        // leftptr->parent = root;
-        // rightptr->parent = root;
-        // return;
     }
 
     auto &kv = head->internal_node->kv;
@@ -133,10 +131,6 @@ void insertIntoInternal(Node* head, int64_t key, Node* leftptr, Node* rightptr, 
     i -= 2;
     kv[i] = key;
     kv[i+1] = (int64_t)rightptr;
-    // cout << "DEBUG: " << i << " "; 
-    // printInternalNode(head);
-    // if(leftptr != nullptr && leftptr->is_leaf) printLeafNode(leftptr);
-    // if(rightptr != nullptr && rightptr->is_leaf) printLeafNode(rightptr);
 
     // Check and split
     if(kvsz > INTERNAL_NODE_LEN) {
@@ -164,8 +158,6 @@ Node* splitLeafNode(Node* head, int index) {
     leaf->leaf_node = new LeafNode();
     leaf->is_leaf = 1;
     leaf->leaf_node->data = right_data;
-
-    // printLeafNode(head); printLeafNode(leaf);
     
     return leaf;
 }
@@ -183,6 +175,8 @@ void insertIntoLeaf(Node* head, int value, Node* &root) {
         int mid = (sz-1) / 2;
         Node* right_half = splitLeafNode(head, mid+1);
         int64_t midKey = data[mid];
+        right_half->leaf_node->next = head->leaf_node->next;
+        head->leaf_node->next = right_half;
         insertIntoInternal(head->parent, midKey, head, right_half, root);
     }
 }
@@ -333,6 +327,7 @@ void mergeLeafNodes(Node* left, Node* right) {
     for(auto i: right->leaf_node->data) {
         left->leaf_node->data.push_back(i);
     }
+    left->leaf_node->next = right->leaf_node->next;
     delete right;
 }
 
@@ -405,29 +400,30 @@ int main(int argc, char* argv[]) {
     // vector<int> nums = {5, 12, 1, 2, 18 ,21};
     vector<int> nums = {5, 21, 16, 1, 6 ,2, 7, 9, 12, 18, 0};
 
-    // vector<int> v;
-    // for(int i=10; i<=530; i+=10) {
-    //     v.push_back(i);
-    //     insert(root, i, root);
-    // }
-    for(auto i: nums) {
+    vector<int> v;
+    for(int i=10; i<=530; i+=10) {
+        v.push_back(i);
         insert(root, i, root);
     }
+    // for(auto i: nums) {
+    //     insert(root, i, root);
+    // }
     print(root);
 
-    // cout << "--------------------------\n";
 
-    // while(v.size()) {
-    //     int m = v.size();
-    //     int ind = rand() % m;
-    //     cout << "DELETE: " << v[ind] << "\n";
 
-    //     deleteRecord(root, v[ind], root);
-    //     print(root);
-    //     v.erase(v.begin()+ind);
-    // }
+    cout << "--------------------------\n";
 
-    cout << "\n";
+    while(v.size()) {
+        int m = v.size();
+        int ind = rand() % m;
+        cout << "DELETE: " << v[ind] << "\n";
+
+        deleteRecord(root, v[ind], root);
+        print(root);
+        v.erase(v.begin()+ind);
+    }
+
 
     return 0;
 }
