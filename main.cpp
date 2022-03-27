@@ -7,7 +7,7 @@
 
 using namespace std;
 
-const int32_t ORDER = 7;
+const int32_t ORDER = 3;
 const int32_t INTERNAL_NODE_LEN = 2 * ORDER - 1;
 const int32_t DATA_LEN = ORDER - 1;
 const int32_t MIN_DATA_LEN = DATA_LEN/2;
@@ -77,29 +77,27 @@ void moveRight(vector<int64_t> &kv) {
     }
 }
 
-Node* splitInternalNode(Node *head) {
+Node* splitInternalNode(Node *head, int index) {
     auto& kv = head->internal_node->kv;
     int kvsz = kv.size();
-    int mid = kvsz / 2;
-    if(mid%2 == 0) --mid;
     
 
-    Node* left_half = new Node();
-    left_half->internal_node = new InternalNode();
-    left_half->is_leaf = 0;
+    Node* right_half = new Node();
+    right_half->internal_node = new InternalNode();
+    right_half->is_leaf = 0;
 
-    vector<int64_t> rightnums(kv.begin() + mid + 1, kv.end());
-    vector<int64_t> leftnums(kv.begin(), kv.begin()+mid);
+    vector<int64_t> rightnums(kv.begin() + index + 1, kv.end());
+    vector<int64_t> leftnums(kv.begin(), kv.begin()+index);
 
-    left_half->internal_node->kv = leftnums;
-    kv = rightnums;
+    right_half->internal_node->kv = rightnums;
+    kv = leftnums;
 
-    int left_half_size = left_half->internal_node->kv.size();
-    for(int i=0;i<left_half_size;i+=2) {
-        ((Node* )(left_half->internal_node->kv[i]))->parent = left_half;
+    int right_half_size = right_half->internal_node->kv.size();
+    for(int i=0;i<right_half_size;i+=2) {
+        ((Node* )(right_half->internal_node->kv[i]))->parent = right_half;
     }
     
-    return left_half;
+    return right_half;
 }
 
 void insertIntoInternal(Node* head, int64_t key, Node* leftptr, Node* rightptr, Node* &root) {
@@ -108,8 +106,11 @@ void insertIntoInternal(Node* head, int64_t key, Node* leftptr, Node* rightptr, 
         head->internal_node = new InternalNode();
         head->parent = 0;
         head->is_leaf = 0;
-        head->internal_node->kv.push_back((int64_t)rightptr);
+        head->internal_node->kv.push_back((int64_t)leftptr);
         root = head;
+        // leftptr->parent = root;
+        // rightptr->parent = root;
+        // return;
     }
 
     auto &kv = head->internal_node->kv;
@@ -124,41 +125,47 @@ void insertIntoInternal(Node* head, int64_t key, Node* leftptr, Node* rightptr, 
     for(i=3;i<kvsz;i+=2) {
         if(kv[i] < key) {
             swap(kv[i], kv[i-2]);
-            swap(kv[i-1], kv[i-3]);
+            swap(kv[i+1], kv[i-1]);
         }
         else
             break;
     }
     i -= 2;
     kv[i] = key;
-    kv[i-1] = (int64_t)leftptr;
+    kv[i+1] = (int64_t)rightptr;
+    // cout << "DEBUG: " << i << " "; 
+    // printInternalNode(head);
+    // if(leftptr != nullptr && leftptr->is_leaf) printLeafNode(leftptr);
+    // if(rightptr != nullptr && rightptr->is_leaf) printLeafNode(rightptr);
 
     // Check and split
     if(kvsz > INTERNAL_NODE_LEN) {
         int mid = kvsz / 2;
         if(mid%2 == 0) --mid;
+
+        Node* right_half = splitInternalNode(head, mid);
         int64_t midKey = kv[mid];
 
-        Node* left_half = splitInternalNode(head);
-
-        insertIntoInternal(head->parent, midKey, left_half, head, root);
+        insertIntoInternal(head->parent, midKey, head, right_half, root);
     }
 }
 
 
-Node* splitLeafNode(Node* head, int64_t value) {
+Node* splitLeafNode(Node* head, int index) {
 
     auto &data = head->leaf_node->data;
     int half_size = (DATA_LEN + 2)/2;
     
-    vector<int64_t> right_data(data.begin()+half_size, data.end());
-    vector<int64_t> left_data(data.begin(), data.begin()+half_size);
-    data = right_data;
+    vector<int64_t> right_data(data.begin()+index, data.end());
+    vector<int64_t> left_data(data.begin(), data.begin()+index);
+    data = left_data;
 
     Node* leaf = new Node();
     leaf->leaf_node = new LeafNode();
     leaf->is_leaf = 1;
-    leaf->leaf_node->data = left_data;
+    leaf->leaf_node->data = right_data;
+
+    // printLeafNode(head); printLeafNode(leaf);
     
     return leaf;
 }
@@ -173,10 +180,10 @@ void insertIntoLeaf(Node* head, int value, Node* &root) {
 
     // check and split
     if(sz > DATA_LEN) {
-        int mid = (sz+1) / 2;
-        int64_t midKey = data[mid-1];
-        Node* left_half = splitLeafNode(head, value);
-        insertIntoInternal(head->parent, midKey, left_half, head, root);
+        int mid = (sz-1) / 2;
+        Node* right_half = splitLeafNode(head, mid+1);
+        int64_t midKey = data[mid];
+        insertIntoInternal(head->parent, midKey, head, right_half, root);
     }
 }
 
@@ -398,24 +405,27 @@ int main(int argc, char* argv[]) {
     // vector<int> nums = {5, 12, 1, 2, 18 ,21};
     vector<int> nums = {5, 21, 16, 1, 6 ,2, 7, 9, 12, 18, 0};
 
-    vector<int> v;
-    for(int i=10; i<=530; i+=10) {
-        v.push_back(i);
+    // vector<int> v;
+    // for(int i=10; i<=530; i+=10) {
+    //     v.push_back(i);
+    //     insert(root, i, root);
+    // }
+    for(auto i: nums) {
         insert(root, i, root);
     }
     print(root);
 
-    cout << "--------------------------\n";
+    // cout << "--------------------------\n";
 
-    while(v.size()) {
-        int m = v.size();
-        int ind = rand() % m;
-        cout << "DELETE: " << v[ind] << "\n";
+    // while(v.size()) {
+    //     int m = v.size();
+    //     int ind = rand() % m;
+    //     cout << "DELETE: " << v[ind] << "\n";
 
-        deleteRecord(root, v[ind], root);
-        print(root);
-        v.erase(v.begin()+ind);
-    }
+    //     deleteRecord(root, v[ind], root);
+    //     print(root);
+    //     v.erase(v.begin()+ind);
+    // }
 
     cout << "\n";
 
